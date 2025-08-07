@@ -11,6 +11,7 @@
 
 // Forward declarations
 void drawBouncyWorm(int y, int start_x, int width, double position, int frame);
+void drawDecorativeWorm(int y, int start_x, int width, int color_pair, bool reverse_direction, int frame);
 void initializeAchievements();
 void saveAchievements();
 void loadAchievements();
@@ -629,6 +630,7 @@ bool showWormCloset() {
     int max_x, max_y;
     int choice = 0;
     int ch;
+    int worm_frame = 0;  // Animation frame counter for decorative worms
     
     while (true) {
         getmaxyx(stdscr, max_y, max_x);
@@ -757,13 +759,57 @@ bool showWormCloset() {
         
         mvprintw(box_start_y + box_height - 4, box_start_x + 3, "%-44s", info.c_str());
         
+        // Draw decorative worms around the closet box
+        int worm_width = box_width - 4;
+        
+        // Top decorative worm (green, moving left to right)
+        drawDecorativeWorm(box_start_y - 1, box_start_x + 2, worm_width, 6, false, worm_frame);
+        
+        // Bottom decorative worm (blue, moving right to left)  
+        drawDecorativeWorm(box_start_y + box_height, box_start_x + 2, worm_width, 7, true, worm_frame + 50);
+        
+        // Side decorative worms (smaller)
+        if (max_x > 80) { // Only show side worms if screen is wide enough
+            // Left side worm (purple, moving down)
+            int left_worm_x = box_start_x - 10;
+            if (left_worm_x > 5) {
+                for (int i = 0; i < 3; i++) {
+                    int worm_y = box_start_y + 3 + i * 4;
+                    if (worm_y < box_start_y + box_height - 2) {
+                        drawDecorativeWorm(worm_y, left_worm_x, 8, 8, (worm_frame + i * 30) % 400 > 200, worm_frame + i * 30);
+                    }
+                }
+            }
+            
+            // Right side worm (pink, moving up)
+            int right_worm_x = box_start_x + box_width + 2;
+            if (right_worm_x < max_x - 10) {
+                for (int i = 0; i < 3; i++) {
+                    int worm_y = box_start_y + box_height - 5 - i * 4;
+                    if (worm_y > box_start_y + 2) {
+                        drawDecorativeWorm(worm_y, right_worm_x, 8, 4, (worm_frame + i * 40) % 300 > 150, worm_frame + i * 40);
+                    }
+                }
+            }
+        }
+        
+        worm_frame++;  // Advance animation
+        
         refresh();
         
         // Instructions at bottom of terminal
         std::string instructions = "WASD/Arrows: Navigate | Enter: Equip | ESC: Back";
         mvprintw(max_y - 1, (max_x - instructions.length()) / 2, "%s", instructions.c_str());
         
+        // Use timeout for smooth animation
+        timeout(100);  // 100ms timeout
         ch = getch();
+        timeout(-1);   // Reset to blocking mode
+        
+        if (ch == ERR) {
+            // No key pressed, continue animation
+            continue;
+        }
         if ((ch == KEY_UP || ch == 'w' || ch == 'W') && choice >= 3) {
             choice -= 3;
         } else if ((ch == KEY_DOWN || ch == 's' || ch == 'S') && choice < 6) {
@@ -1172,6 +1218,7 @@ void showAnimatedIntro() {
         
         // Draw words up to current progress
         int temp_x = title_start_x;
+        int cursor_x = temp_x; // Track cursor position
         for (int j = 0; j < words_to_show; j++) {
             if (has_colors()) {
                 attron(COLOR_PAIR(5));  // Use orange-red color for title
@@ -1183,15 +1230,16 @@ void showAnimatedIntro() {
                 attroff(COLOR_PAIR(5));
             }
             
-            // Position cursor at end of current word during animation
-            curs_set(1);
-            move(title_y, temp_x + title_words[j].length());
-            
+            cursor_x = temp_x + title_words[j].length(); // Update cursor position
             temp_x += title_words[j].length() + 1;  // Move position for next word (+ space)
         }
         
-        // Draw the animated worm
+        // Draw the animated worm first
         drawBouncyWorm(worm_y, worm_start_x, worm_width, worm_position, worm_frame);
+        
+        // Position cursor at end of last word drawn during animation (after worm drawing)
+        curs_set(1);
+        move(title_y, cursor_x);
         
         refresh();
         usleep(150000);  // 150ms delay between frames (total: 3 seconds for 20 frames)
@@ -1235,6 +1283,54 @@ void showAnimatedIntro() {
     
     // Wait for any key press
     getch();
+}
+
+// Function to draw a decorative worm for closet/inventory screens
+void drawDecorativeWorm(int y, int start_x, int width, int color_pair, bool reverse_direction, int frame) {
+    if (width <= 0) return;
+    
+    // Calculate animation position (moves across the width)
+    double progress = (frame % 200) / 200.0; // Complete cycle in 200 frames
+    int head_x;
+    
+    if (reverse_direction) {
+        head_x = start_x + width - 1 - (int)(progress * (width - 1));
+    } else {
+        head_x = start_x + (int)(progress * (width - 1));
+    }
+    
+    // Worm head animation frames (bouncy effect)
+    char head_chars[] = {'O', 'o', 'O', '0'};
+    char head_char = head_chars[frame % 4];
+    
+    // Apply color
+    if (has_colors()) {
+        attron(COLOR_PAIR(color_pair));
+    }
+    
+    // Draw the worm head
+    mvaddch(y, head_x, head_char);
+    
+    // Draw trailing body segments
+    int worm_length = 6;
+    for (int i = 1; i <= worm_length; i++) {
+        int body_x = reverse_direction ? head_x + i : head_x - i;
+        if (body_x >= start_x && body_x < start_x + width) {
+            char body_char;
+            if (i == 1) {
+                body_char = 'o';
+            } else if (i <= 3) {
+                body_char = '.';
+            } else {
+                body_char = (frame % 2 == 0) ? ':' : '.';
+            }
+            mvaddch(y, body_x, body_char);
+        }
+    }
+    
+    if (has_colors()) {
+        attroff(COLOR_PAIR(color_pair));
+    }
 }
 
 // Function to draw bouncy worm animation with color support
@@ -1333,11 +1429,24 @@ int main(int argc, char* argv[]) {
             // Define custom orange-red color for default worm (RGB: 245, 73, 39)
             init_color(11, 958, 286, 153);  // 245*1000/255, 73*1000/255, 39*1000/255
             init_pair(5, 11, -1);  // Pair 5: default worm with transparent background
+            
+            // Define decorative worm colors for closet
+            init_color(12, 0, 1000, 0);      // Bright green (RGB: 0, 255, 0)
+            init_pair(6, 12, -1);  // Pair 6: green worm
+            
+            init_color(13, 0, 500, 1000);    // Blue (RGB: 0, 128, 255)
+            init_pair(7, 13, -1);  // Pair 7: blue worm
+            
+            init_color(14, 800, 0, 800);     // Purple (RGB: 204, 0, 204)
+            init_pair(8, 14, -1);  // Pair 8: purple worm
         } else {
             // Fallback to closest standard color (yellow)
             init_pair(1, COLOR_YELLOW, -1);   // Pair 1: correct chars (yellow fallback) with transparent background
             init_pair(4, COLOR_MAGENTA, -1);  // Pair 4: pink worm fallback with transparent background
             init_pair(5, COLOR_RED, -1);      // Pair 5: default worm fallback with transparent background
+            init_pair(6, COLOR_GREEN, -1);    // Pair 6: green worm fallback
+            init_pair(7, COLOR_BLUE, -1);     // Pair 7: blue worm fallback
+            init_pair(8, COLOR_MAGENTA, -1);  // Pair 8: purple worm fallback
         }
         
         init_pair(2, COLOR_RED, -1);     // Pair 2: wrong chars (red) with transparent background
