@@ -138,7 +138,7 @@ std::string showNameSelectionMenu(const std::vector<std::string>& names) {
         
         // Calculate box dimensions
         int box_width = 40;
-        int box_height = names.size() + 8;  // Title + names + new name option + padding
+        int box_height = names.size() + 7;  // Title + names + new name option + padding
         if (box_height > max_y - 4) box_height = max_y - 4;
         int box_start_x = (max_x - box_width) / 2;
         int box_start_y = (max_y - box_height) / 2;
@@ -205,35 +205,29 @@ std::string showNameSelectionMenu(const std::vector<std::string>& names) {
             mvprintw(startY + names.size(), option_x, "%s", newNameOption.c_str());
         }
         
-        // Add "Worm Closet" option inside box
-        std::string wormClosetOption = "Worm Closet";
-        if (choice == (int)names.size() + 1) {
-            std::string fullOption = "[" + wormClosetOption + "]";
-            int option_x = center_x - fullOption.length() / 2;
-            mvprintw(startY + names.size() + 1, option_x, "%s", fullOption.c_str());
-        } else {
-            int option_x = center_x - wormClosetOption.length() / 2;
-            mvprintw(startY + names.size() + 1, option_x, "%s", wormClosetOption.c_str());
-        }
         
         refresh();
         
         // Instructions at bottom of terminal (outside box)
         std::string instructions = "WASD/Arrows + Enter | ESC: Back";
-        mvprintw(max_y - 1, (max_x - instructions.length()) / 2, "%s", instructions.c_str());
+        mvprintw(max_y - 2, (max_x - instructions.length()) / 2, "%s", instructions.c_str());
+        
+        // Add program-wide worm closet instruction
+        std::string wormInstruction = "Press W for Worm Closet";
+        mvprintw(max_y - 1, (max_x - wormInstruction.length()) / 2, "%s", wormInstruction.c_str());
         
         ch = getch();
-        if ((ch == KEY_UP || ch == 'w' || ch == 'W') && choice > 0) {
+        if (ch == 'w' || ch == 'W') {
+            return "WORM_CLOSET";  // Signal to open worm closet
+        } else if (ch == KEY_UP && choice > 0) {
             choice--;
-        } else if ((ch == KEY_DOWN || ch == 's' || ch == 'S') && choice < (int)names.size() + 1) {  // names.size() + "new name" + "worm closet"
+        } else if ((ch == KEY_DOWN || ch == 's' || ch == 'S') && choice < (int)names.size()) {  // names.size() + "new name"
             choice++;
         } else if (ch == 10 || ch == 13) { // Enter
             if (choice < (int)names.size()) {
                 return names[choice];  // Return selected existing name
             } else if (choice == (int)names.size()) {
                 return "";  // Signal to enter new name
-            } else {
-                return "WORM_CLOSET";  // Signal to open worm closet
             }
         } else if (ch == 27) { // ESC - go back to main menu
             return "CANCEL";
@@ -1420,7 +1414,7 @@ int main(int argc, char* argv[]) {
             // Define custom yellow color for correct chars (RGB: 255, 255, 0)
             // RGB values need to be scaled to 0-1000 for ncurses
             init_color(9, 1000, 1000, 0);  // 255*1000/255, 255*1000/255, 0*1000/255
-            init_pair(1, 9, -1);  // Pair 1: correct chars (yellow) with transparent background
+            init_pair(9, COLOR_CYAN, -1);  // Pair 1: correct chars (yellow) with transparent background
             
             // Define custom pink color for pink worm achievement (RGB: 255, 20, 147)
             init_color(10, 1000, 78, 576);  // 255*1000/255, 20*1000/255, 147*1000/255
@@ -1441,7 +1435,7 @@ int main(int argc, char* argv[]) {
             init_pair(8, 14, -1);  // Pair 8: purple worm
         } else {
             // Fallback to closest standard color (yellow)
-            init_pair(1, COLOR_YELLOW, -1);   // Pair 1: correct chars (yellow fallback) with transparent background
+            init_pair(1, COLOR_BLUE, -1);   // Pair 1: correct chars (yellow fallback) with transparent background
             init_pair(4, COLOR_MAGENTA, -1);  // Pair 4: pink worm fallback with transparent background
             init_pair(5, COLOR_RED, -1);      // Pair 5: default worm fallback with transparent background
             init_pair(6, COLOR_GREEN, -1);    // Pair 6: green worm fallback
@@ -1450,7 +1444,7 @@ int main(int argc, char* argv[]) {
         }
         
         init_pair(2, COLOR_RED, -1);     // Pair 2: wrong chars (red) with transparent background
-        init_pair(3, COLOR_WHITE, -1);   // Pair 3: untyped chars (white) with transparent background
+        init_pair(3, COLOR_MAGENTA, -1);   // Pair 3: untyped chars (white) with transparent background
     }
     
     // Load leaderboard
@@ -1693,6 +1687,8 @@ int main(int argc, char* argv[]) {
                 // Worm closet requested
                 showWormCloset();
             }
+        } else if (ch == 'W') { // Show worm closet (only capital W to avoid collision with typing)
+            showWormCloset();
         }
         
         // Update ball position and animation based on typing progress
@@ -1741,7 +1737,7 @@ int main(int argc, char* argv[]) {
         mvprintw(win_start_y + 1, title_x, "%s", title.c_str());
         
         // Display instructions at bottom of window
-        std::string instruct = "ENTER: restart | ESC: quit | L: leaderboard";
+        std::string instruct = "ENTER: restart | ESC: quit | L: leaderboard | W: worm closet";
         int instruct_x = win_start_x + (window_width - instruct.length()) / 2;
         mvprintw(win_start_y + window_height - 3, instruct_x, "%s", instruct.c_str());
         
