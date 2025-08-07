@@ -21,24 +21,10 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Create executable for the main typing test
-add_executable(tt claudetypingtest.cpp)
-target_link_libraries(tt ${NCURSES_LIBRARY})
+add_executable(wormtype wormtype.cpp)
+target_link_libraries(wormtype ${NCURSES_LIBRARY})
 if(NCURSES_INCLUDE_DIR)
-    target_include_directories(tt PRIVATE ${NCURSES_INCLUDE_DIR})
-endif()
-
-# Create executable for basic ncurses example
-add_executable(basic_ncurses ncurses.cpp)
-target_link_libraries(basic_ncurses ${NCURSES_LIBRARY})
-if(NCURSES_INCLUDE_DIR)
-    target_include_directories(basic_ncurses PRIVATE ${NCURSES_INCLUDE_DIR})
-endif()
-
-# Create executable for ncurses tutorial
-add_executable(ncurses_tutorial ncurses_tut.cpp)
-target_link_libraries(ncurses_tutorial ${NCURSES_LIBRARY})
-if(NCURSES_INCLUDE_DIR)
-    target_include_directories(ncurses_tutorial PRIVATE ${NCURSES_INCLUDE_DIR})
+    target_include_directories(wormtype PRIVATE ${NCURSES_INCLUDE_DIR})
 endif()
 
 # Print build information
