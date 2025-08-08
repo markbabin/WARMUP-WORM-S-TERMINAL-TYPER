@@ -37,9 +37,35 @@ struct Achievement {
         : id(i), name(n), description(d), unlocked(false) {}
 };
 
-// Global achievements list
-std::vector<Achievement> achievements;
-std::string equippedWormColor = "default";  // default, pink, etc.
+// Player save data structure
+struct PlayerSaveData {
+    std::string playerName;
+    std::vector<Achievement> achievements;
+    std::string equippedWormColor;
+    int currency;
+    
+    PlayerSaveData(const std::string& name) 
+        : playerName(name), equippedWormColor("default"), currency(0) {
+        // Initialize with default achievements
+        achievements.push_back(Achievement("pink_worm", "red!worm?pink!worm?", "Achieve 60+ WPM to unlock the pink worm variant!"));
+        achievements.push_back(Achievement("blue_worm", "blue!worm?speedy!typer?", "Achieve 75+ WPM to unlock the blue worm variant!"));
+        achievements.push_back(Achievement("magenta_worm", "magenta!worm?lightning!fingers?", "Achieve 80+ WPM to unlock the magenta worm variant!"));
+        achievements.push_back(Achievement("yellow_worm", "golden!worm?typing!master?", "Achieve 90+ WPM to unlock the golden worm variant!"));
+    }
+};
+
+// Global player data
+PlayerSaveData* currentPlayerData = nullptr;
+std::string currentPlayerName = "";
+
+// Player save system forward declarations
+void savePlayerData(const PlayerSaveData& playerData);
+PlayerSaveData loadPlayerData(const std::string& playerName);
+void setCurrentPlayer(const std::string& playerName);
+std::string getSafeFileName(const std::string& playerName);
+std::vector<std::string> getAllSavedPlayerNames();
+bool confirmDeleteAllPlayers();
+void deleteAllSavedPlayers();
 
 // Structure to hold player score data
 struct PlayerScore {
@@ -110,12 +136,32 @@ struct PlayerScore {
     PlayerScore() : name(""), wpm(0), accuracy(0), time(0), date(""), wordCount(15), hasPunctuation(false), hasNumbers(false) {}
 };
 
-// Function to get unique player names from leaderboard
+// Function to get unique player names from leaderboard and save files
 std::vector<std::string> getUniquePlayerNames(const std::vector<PlayerScore>& leaderboard) {
     std::vector<std::string> uniqueNames;
     
+    // Add names from leaderboard
     for (size_t i = 0; i < leaderboard.size(); i++) {
         const std::string& name = leaderboard[i].name;
+        bool found = false;
+        
+        // Check if name already exists in uniqueNames
+        for (size_t j = 0; j < uniqueNames.size(); j++) {
+            if (uniqueNames[j] == name) {
+                found = true;
+                break;
+            }
+        }
+        
+        if (!found) {
+            uniqueNames.push_back(name);
+        }
+    }
+    
+    // Add names from saved players (those who have save files but may not be on leaderboard)
+    std::vector<std::string> savedNames = getAllSavedPlayerNames();
+    for (size_t i = 0; i < savedNames.size(); i++) {
+        const std::string& name = savedNames[i];
         bool found = false;
         
         // Check if name already exists in uniqueNames
@@ -146,7 +192,7 @@ std::string showNameSelectionMenu(const std::vector<std::string>& names) {
         
         // Calculate box dimensions
         int box_width = 40;
-        int box_height = names.size() + 7;  // Title + names + new name option + padding
+        int box_height = names.size() + 8;  // Title + names + new name option + delete option + padding
         if (box_height > max_y - 4) box_height = max_y - 4;
         int box_start_x = (max_x - box_width) / 2;
         int box_start_y = (max_y - box_height) / 2;
@@ -213,6 +259,17 @@ std::string showNameSelectionMenu(const std::vector<std::string>& names) {
             mvprintw(startY + names.size(), option_x, "%s", newNameOption.c_str());
         }
         
+        // Add "Delete All Saved Players" option inside box
+        std::string deleteOption = "Delete All Saved Players";
+        if (choice == (int)names.size() + 1) {
+            std::string fullOption = "[" + deleteOption + "]";
+            int option_x = center_x - fullOption.length() / 2;
+            mvprintw(startY + names.size() + 1, option_x, "%s", fullOption.c_str());
+        } else {
+            int option_x = center_x - deleteOption.length() / 2;
+            mvprintw(startY + names.size() + 1, option_x, "%s", deleteOption.c_str());
+        }
+        
         
         refresh();
         
@@ -225,17 +282,19 @@ std::string showNameSelectionMenu(const std::vector<std::string>& names) {
         mvprintw(max_y - 1, (max_x - wormInstruction.length()) / 2, "%s", wormInstruction.c_str());
         
         ch = getch();
-        if (ch == 'w' || ch == 'W') {
+        if (ch == 'W') {  // Only capital W for worm closet
             return "WORM_CLOSET";  // Signal to open worm closet
-        } else if (ch == KEY_UP && choice > 0) {
+        } else if ((ch == KEY_UP || ch == 'w') && choice > 0) {  // Added 'w' for up movement
             choice--;
-        } else if ((ch == KEY_DOWN || ch == 's' || ch == 'S') && choice < (int)names.size()) {  // names.size() + "new name"
+        } else if ((ch == KEY_DOWN || ch == 's' || ch == 'S') && choice < (int)names.size() + 1) {  // names.size() + "new name" + "delete"
             choice++;
         } else if (ch == 10 || ch == 13) { // Enter
             if (choice < (int)names.size()) {
                 return names[choice];  // Return selected existing name
             } else if (choice == (int)names.size()) {
                 return "";  // Signal to enter new name
+            } else if (choice == (int)names.size() + 1) {
+                return "DELETE_ALL";  // Signal to delete all saved players
             }
         } else if (ch == 'q' || ch == 'Q') { // Q - go back to main menu
             return "CANCEL";
@@ -329,7 +388,12 @@ std::string getNewPlayerName() {
         }
     }
     
-    return toUpperCase(name);
+    // Create and save player data immediately for new player
+    std::string upperName = toUpperCase(name);
+    PlayerSaveData newPlayerData(upperName);
+    savePlayerData(newPlayerData);
+    
+    return upperName;
 }
 
 // Function to get custom word count from user input
@@ -693,29 +757,87 @@ bool showWormCloset() {
                 bool isUnlocked = false;
                 std::string slotContent = "[ ]";
                 
-                // Check if this is the pink worm achievement (slot 0)
-                if (row == 0 && col == 0) {
-                    for (size_t i = 0; i < achievements.size(); i++) {
-                        if (achievements[i].id == "pink_worm" && achievements[i].unlocked) {
-                            isUnlocked = true;
-                            if (equippedWormColor == "pink") {
-                                slotContent = "[*]";  // Equipped
-                            } else {
-                                slotContent = "[P]";  // Pink available
+                // Check worm slots
+                int slot_id = row * 3 + col;
+                if (slot_id == 0) {
+                    // Default worm (always available)
+                    isUnlocked = true;
+                    if (currentPlayerData != nullptr && currentPlayerData->equippedWormColor == "default") {
+                        slotContent = "[*]";  // Equipped
+                    } else {
+                        slotContent = "[D]";  // Default available
+                    }
+                } else if (slot_id == 1) {
+                    // Pink worm (60+ WPM)
+                    if (currentPlayerData != nullptr) {
+                        for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                            if (currentPlayerData->achievements[i].id == "pink_worm" && currentPlayerData->achievements[i].unlocked) {
+                                isUnlocked = true;
+                                if (currentPlayerData->equippedWormColor == "pink") {
+                                    slotContent = "[*]";  // Equipped
+                                } else {
+                                    slotContent = "[P]";  // Pink available
+                                }
+                                break;
                             }
-                            break;
                         }
                     }
                     if (!isUnlocked) {
                         slotContent = "[?]";  // Locked
                     }
-                } else if (row == 0 && col == 1) {
-                    // Default worm (always available)
-                    isUnlocked = true;
-                    if (equippedWormColor == "default") {
-                        slotContent = "[*]";  // Equipped
-                    } else {
-                        slotContent = "[D]";  // Default available
+                } else if (slot_id == 2) {
+                    // Blue worm (75+ WPM)
+                    if (currentPlayerData != nullptr) {
+                        for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                            if (currentPlayerData->achievements[i].id == "blue_worm" && currentPlayerData->achievements[i].unlocked) {
+                                isUnlocked = true;
+                                if (currentPlayerData->equippedWormColor == "blue") {
+                                    slotContent = "[*]";  // Equipped
+                                } else {
+                                    slotContent = "[B]";  // Blue available
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (!isUnlocked) {
+                        slotContent = "[?]";  // Locked
+                    }
+                } else if (slot_id == 3) {
+                    // Magenta worm (80+ WPM)
+                    if (currentPlayerData != nullptr) {
+                        for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                            if (currentPlayerData->achievements[i].id == "magenta_worm" && currentPlayerData->achievements[i].unlocked) {
+                                isUnlocked = true;
+                                if (currentPlayerData->equippedWormColor == "magenta") {
+                                    slotContent = "[*]";  // Equipped
+                                } else {
+                                    slotContent = "[M]";  // Magenta available
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (!isUnlocked) {
+                        slotContent = "[?]";  // Locked
+                    }
+                } else if (slot_id == 4) {
+                    // Yellow worm (90+ WPM)
+                    if (currentPlayerData != nullptr) {
+                        for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                            if (currentPlayerData->achievements[i].id == "yellow_worm" && currentPlayerData->achievements[i].unlocked) {
+                                isUnlocked = true;
+                                if (currentPlayerData->equippedWormColor == "yellow") {
+                                    slotContent = "[*]";  // Equipped
+                                } else {
+                                    slotContent = "[Y]";  // Yellow available
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (!isUnlocked) {
+                        slotContent = "[?]";  // Locked
                     }
                 } else {
                     slotContent = "[ ]";  // Empty slot for future achievements
@@ -724,21 +846,41 @@ bool showWormCloset() {
                 // Draw selection indicator
                 if (isSelected) {
                     mvprintw(slot_y, slot_x, "> ");
-                    // Apply pink color if this is the pink worm slot and it's unlocked
-                    if (row == 0 && col == 0 && isUnlocked && has_colors()) {
-                        attron(COLOR_PAIR(4));  // Pink color
-                        mvprintw(slot_y, slot_x + 2, "%s", slotContent.c_str());
-                        attroff(COLOR_PAIR(4));
+                    // Apply appropriate color for each worm type
+                    if (isUnlocked && has_colors()) {
+                        int color_pair = 0;
+                        if (slot_id == 1) color_pair = COLOR_PAIR(4);      // Pink worm
+                        else if (slot_id == 2) color_pair = COLOR_PAIR(7); // Blue worm
+                        else if (slot_id == 3) color_pair = COLOR_PAIR(8); // Magenta worm
+                        else if (slot_id == 4) color_pair = COLOR_PAIR(9); // Yellow worm
+                        
+                        if (color_pair != 0) {
+                            attron(color_pair);
+                            mvprintw(slot_y, slot_x + 2, "%s", slotContent.c_str());
+                            attroff(color_pair);
+                        } else {
+                            mvprintw(slot_y, slot_x + 2, "%s", slotContent.c_str());
+                        }
                     } else {
                         mvprintw(slot_y, slot_x + 2, "%s", slotContent.c_str());
                     }
                     mvprintw(slot_y, slot_x + 5, " <");
                 } else {
-                    // Apply pink color if this is the pink worm slot and it's unlocked
-                    if (row == 0 && col == 0 && isUnlocked && has_colors()) {
-                        attron(COLOR_PAIR(4));  // Pink color
-                        mvprintw(slot_y, slot_x + 2, "%s", slotContent.c_str());
-                        attroff(COLOR_PAIR(4));
+                    // Apply appropriate color for each worm type
+                    if (isUnlocked && has_colors()) {
+                        int color_pair = 0;
+                        if (slot_id == 1) color_pair = COLOR_PAIR(4);      // Pink worm
+                        else if (slot_id == 2) color_pair = COLOR_PAIR(7); // Blue worm
+                        else if (slot_id == 3) color_pair = COLOR_PAIR(8); // Magenta worm
+                        else if (slot_id == 4) color_pair = COLOR_PAIR(9); // Yellow worm
+                        
+                        if (color_pair != 0) {
+                            attron(color_pair);
+                            mvprintw(slot_y, slot_x + 2, "%s", slotContent.c_str());
+                            attroff(color_pair);
+                        } else {
+                            mvprintw(slot_y, slot_x + 2, "%s", slotContent.c_str());
+                        }
                     } else {
                         mvprintw(slot_y, slot_x + 2, "%s", slotContent.c_str());
                     }
@@ -749,16 +891,51 @@ bool showWormCloset() {
         // Show current selection info
         std::string info = "";
         if (choice == 0) {
+            info = "Default Worm - Classic orange-red";
+        } else if (choice == 1) {
             bool pinkUnlocked = false;
-            for (size_t i = 0; i < achievements.size(); i++) {
-                if (achievements[i].id == "pink_worm" && achievements[i].unlocked) {
-                    pinkUnlocked = true;
-                    break;
+            if (currentPlayerData != nullptr) {
+                for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                    if (currentPlayerData->achievements[i].id == "pink_worm" && currentPlayerData->achievements[i].unlocked) {
+                        pinkUnlocked = true;
+                        break;
+                    }
                 }
             }
             info = pinkUnlocked ? "Pink Worm - Unlocked at 60+ WPM" : "??? - Achieve 60+ WPM to unlock";
-        } else if (choice == 1) {
-            info = "Default Worm - Classic orange-red";
+        } else if (choice == 2) {
+            bool blueUnlocked = false;
+            if (currentPlayerData != nullptr) {
+                for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                    if (currentPlayerData->achievements[i].id == "blue_worm" && currentPlayerData->achievements[i].unlocked) {
+                        blueUnlocked = true;
+                        break;
+                    }
+                }
+            }
+            info = blueUnlocked ? "Blue Worm - Unlocked at 75+ WPM" : "??? - Achieve 75+ WPM to unlock";
+        } else if (choice == 3) {
+            bool magentaUnlocked = false;
+            if (currentPlayerData != nullptr) {
+                for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                    if (currentPlayerData->achievements[i].id == "magenta_worm" && currentPlayerData->achievements[i].unlocked) {
+                        magentaUnlocked = true;
+                        break;
+                    }
+                }
+            }
+            info = magentaUnlocked ? "Magenta Worm - Unlocked at 80+ WPM" : "??? - Achieve 80+ WPM to unlock";
+        } else if (choice == 4) {
+            bool yellowUnlocked = false;
+            if (currentPlayerData != nullptr) {
+                for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                    if (currentPlayerData->achievements[i].id == "yellow_worm" && currentPlayerData->achievements[i].unlocked) {
+                        yellowUnlocked = true;
+                        break;
+                    }
+                }
+            }
+            info = yellowUnlocked ? "Golden Worm - Unlocked at 90+ WPM" : "??? - Achieve 90+ WPM to unlock";
         } else {
             info = "Empty Slot - Future achievement";
         }
@@ -825,61 +1002,189 @@ bool showWormCloset() {
         } else if ((ch == KEY_RIGHT || ch == 'd' || ch == 'D') && choice % 3 < 2) {
             choice++;
         } else if (ch == 10 || ch == 13) { // Enter - equip worm
-            if (choice == 0) {
-                // Pink worm
-                for (size_t i = 0; i < achievements.size(); i++) {
-                    if (achievements[i].id == "pink_worm" && achievements[i].unlocked) {
-                        equippedWormColor = "pink";
-                        saveAchievements();
-                        break;
+            if (currentPlayerData != nullptr) {
+                if (choice == 0) {
+                    // Default worm (always available)
+                    currentPlayerData->equippedWormColor = "default";
+                    savePlayerData(*currentPlayerData);
+                } else if (choice == 1) {
+                    // Pink worm (60+ WPM)
+                    for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                        if (currentPlayerData->achievements[i].id == "pink_worm" && currentPlayerData->achievements[i].unlocked) {
+                            currentPlayerData->equippedWormColor = "pink";
+                            savePlayerData(*currentPlayerData);
+                            break;
+                        }
+                    }
+                } else if (choice == 2) {
+                    // Blue worm (75+ WPM)
+                    for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                        if (currentPlayerData->achievements[i].id == "blue_worm" && currentPlayerData->achievements[i].unlocked) {
+                            currentPlayerData->equippedWormColor = "blue";
+                            savePlayerData(*currentPlayerData);
+                            break;
+                        }
+                    }
+                } else if (choice == 3) {
+                    // Magenta worm (80+ WPM)
+                    for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                        if (currentPlayerData->achievements[i].id == "magenta_worm" && currentPlayerData->achievements[i].unlocked) {
+                            currentPlayerData->equippedWormColor = "magenta";
+                            savePlayerData(*currentPlayerData);
+                            break;
+                        }
+                    }
+                } else if (choice == 4) {
+                    // Yellow worm (90+ WPM)
+                    for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                        if (currentPlayerData->achievements[i].id == "yellow_worm" && currentPlayerData->achievements[i].unlocked) {
+                            currentPlayerData->equippedWormColor = "yellow";
+                            savePlayerData(*currentPlayerData);
+                            break;
+                        }
                     }
                 }
-            } else if (choice == 1) {
-                // Default worm
-                equippedWormColor = "default";
-                saveAchievements();
+                // Other slots are empty for future achievements
             }
-            // Other slots don't have worms yet
         } else if (ch == 'q' || ch == 'Q') { // Q
             return false;
         }
     }
 }
 
-// Achievement system functions
+// Legacy achievement system functions (kept for compatibility)
 void initializeAchievements() {
-    achievements.clear();
-    achievements.push_back(Achievement("pink_worm", "red!worm?pink!worm?", "Achieve 60+ WPM to unlock the pink worm variant!"));
+    // No longer used - achievements are now player-specific
 }
 
 void saveAchievements() {
-    std::ofstream file("achievements.txt");
+    // No longer used - use savePlayerData instead
+}
+
+void loadAchievements() {
+    // No longer used - use loadPlayerData instead
+}
+
+void checkAchievements(double wpm, double accuracy, double time) {
+    if (currentPlayerData == nullptr) return;
+    
+    bool newAchievement = false;
+    
+    // Check for all worm achievements based on WPM thresholds
+    struct WormThreshold {
+        std::string id;
+        double minWpm;
+        std::string description;
+    };
+    
+    WormThreshold thresholds[] = {
+        {"yellow_worm", 90.0, "Golden worm variant unlocked!"},
+        {"magenta_worm", 80.0, "Magenta worm variant unlocked!"},
+        {"blue_worm", 75.0, "Blue worm variant unlocked!"},
+        {"pink_worm", 60.0, "Pink worm variant unlocked!"}
+    };
+    
+    // Check thresholds from highest to lowest WPM
+    for (int t = 0; t < 4; t++) {
+        if (wpm >= thresholds[t].minWpm) {
+            for (size_t i = 0; i < currentPlayerData->achievements.size(); i++) {
+                if (currentPlayerData->achievements[i].id == thresholds[t].id && !currentPlayerData->achievements[i].unlocked) {
+                    currentPlayerData->achievements[i].unlocked = true;
+                    newAchievement = true;
+                    
+                    // Show achievement notification
+                    int max_x, max_y;
+                    getmaxyx(stdscr, max_y, max_x);
+                    clear();
+                    
+                    std::string congrats = "ACHIEVEMENT UNLOCKED!";
+                    std::string achieveName = currentPlayerData->achievements[i].name;
+                    std::string description = thresholds[t].description;
+                    std::string instruction = "Press any key to continue...";
+                    
+                    mvprintw(max_y/2 - 2, (max_x - congrats.length())/2, "%s", congrats.c_str());
+                    mvprintw(max_y/2, (max_x - achieveName.length())/2, "%s", achieveName.c_str());
+                    mvprintw(max_y/2 + 1, (max_x - description.length())/2, "%s", description.c_str());
+                    mvprintw(max_y/2 + 3, (max_x - instruction.length())/2, "%s", instruction.c_str());
+                    
+                    refresh();
+                    getch();
+                    break; // Only show one achievement notification per session
+                }
+            }
+            if (newAchievement) break; // Exit outer loop if we found an achievement
+        }
+    }
+    
+    if (newAchievement) {
+        savePlayerData(*currentPlayerData);
+    }
+}
+
+// Player save system functions
+std::string getSafeFileName(const std::string& playerName) {
+    std::string safeName = playerName;
+    // Replace any problematic characters with underscores
+    for (size_t i = 0; i < safeName.length(); i++) {
+        if (safeName[i] == ' ' || safeName[i] == '/' || safeName[i] == '\\' || 
+            safeName[i] == ':' || safeName[i] == '*' || safeName[i] == '?' || 
+            safeName[i] == '"' || safeName[i] == '<' || safeName[i] == '>' || 
+            safeName[i] == '|' || safeName[i] == '.') {
+            safeName[i] = '_';
+        }
+    }
+    return "saves/" + safeName + ".save";
+}
+
+void savePlayerData(const PlayerSaveData& playerData) {
+    // Create saves directory if it doesn't exist
+    system("mkdir -p saves");
+    
+    std::string filename = getSafeFileName(playerData.playerName);
+    std::ofstream file(filename);
     if (file.is_open()) {
-        file << equippedWormColor << std::endl;
-        for (size_t i = 0; i < achievements.size(); i++) {
-            file << achievements[i].id << "|" << (achievements[i].unlocked ? 1 : 0) << std::endl;
+        // Save format: playerName|equippedWormColor|currency
+        file << playerData.playerName << "|" << playerData.equippedWormColor << "|" << playerData.currency << std::endl;
+        
+        // Save achievements
+        for (size_t i = 0; i < playerData.achievements.size(); i++) {
+            file << playerData.achievements[i].id << "|" << (playerData.achievements[i].unlocked ? 1 : 0) << std::endl;
         }
         file.close();
     }
 }
 
-void loadAchievements() {
-    std::ifstream file("achievements.txt");
+PlayerSaveData loadPlayerData(const std::string& playerName) {
+    std::string filename = getSafeFileName(playerName);
+    std::ifstream file(filename);
+    
+    PlayerSaveData playerData(playerName);
+    
     if (file.is_open()) {
         std::string line;
+        
+        // Read player info line
         if (std::getline(file, line)) {
-            equippedWormColor = line;
+            size_t pos1 = line.find('|');
+            size_t pos2 = line.find('|', pos1 + 1);
+            
+            if (pos1 != std::string::npos && pos2 != std::string::npos) {
+                playerData.equippedWormColor = line.substr(pos1 + 1, pos2 - pos1 - 1);
+                playerData.currency = std::stoi(line.substr(pos2 + 1));
+            }
         }
         
+        // Read achievements
         while (std::getline(file, line)) {
             size_t pos = line.find('|');
             if (pos != std::string::npos) {
                 std::string id = line.substr(0, pos);
-                bool unlocked = (std::stoi(line.substr(pos + 1)) == 1);
+                bool unlocked = line.substr(pos + 1) == "1";
                 
-                for (size_t i = 0; i < achievements.size(); i++) {
-                    if (achievements[i].id == id) {
-                        achievements[i].unlocked = unlocked;
+                // Find and update the achievement
+                for (size_t i = 0; i < playerData.achievements.size(); i++) {
+                    if (playerData.achievements[i].id == id) {
+                        playerData.achievements[i].unlocked = unlocked;
                         break;
                     }
                 }
@@ -887,41 +1192,157 @@ void loadAchievements() {
         }
         file.close();
     }
+    
+    return playerData;
 }
 
-void checkAchievements(double wpm, double accuracy, double time) {
-    bool newAchievement = false;
+void setCurrentPlayer(const std::string& playerName) {
+    if (currentPlayerData != nullptr) {
+        delete currentPlayerData;
+    }
     
-    // Check for pink worm achievement (60+ WPM)
-    for (size_t i = 0; i < achievements.size(); i++) {
-        if (achievements[i].id == "pink_worm" && !achievements[i].unlocked && wpm >= 60.0) {
-            achievements[i].unlocked = true;
-            newAchievement = true;
-            
-            // Show achievement notification
-            int max_x, max_y;
-            getmaxyx(stdscr, max_y, max_x);
-            clear();
-            
-            std::string congrats = "ACHIEVEMENT UNLOCKED!";
-            std::string achieveName = achievements[i].name;
-            std::string description = "Pink worm variant unlocked!";
-            std::string instruction = "Press any key to continue...";
-            
-            mvprintw(max_y/2 - 2, (max_x - congrats.length())/2, "%s", congrats.c_str());
-            mvprintw(max_y/2, (max_x - achieveName.length())/2, "%s", achieveName.c_str());
-            mvprintw(max_y/2 + 1, (max_x - description.length())/2, "%s", description.c_str());
-            mvprintw(max_y/2 + 3, (max_x - instruction.length())/2, "%s", instruction.c_str());
-            
-            refresh();
-            getch();
-            break;
+    currentPlayerName = playerName;
+    currentPlayerData = new PlayerSaveData(loadPlayerData(playerName));
+}
+
+std::vector<std::string> getAllSavedPlayerNames() {
+    std::vector<std::string> savedNames;
+    
+    // Use system command to list .save files in saves directory
+    system("mkdir -p saves");  // Ensure directory exists
+    system("ls saves/*.save 2>/dev/null | sed 's|saves/||g' | sed 's|\\.save||g' > /tmp/saved_players.txt");
+    
+    std::ifstream file("/tmp/saved_players.txt");
+    if (file.is_open()) {
+        std::string line;
+        while (std::getline(file, line)) {
+            if (!line.empty()) {
+                savedNames.push_back(line);
+            }
+        }
+        file.close();
+    }
+    
+    // Clean up temp file
+    system("rm -f /tmp/saved_players.txt");
+    
+    return savedNames;
+}
+
+bool confirmDeleteAllPlayers() {
+    int max_x, max_y;
+    int choice = 0;
+    int ch;
+    
+    while (true) {
+        getmaxyx(stdscr, max_y, max_x);
+        clear();
+        
+        // Calculate box dimensions
+        int box_width = 50;
+        int box_height = 10;
+        int box_start_x = (max_x - box_width) / 2;
+        int box_start_y = (max_y - box_height) / 2;
+        
+        // Draw retro box border
+        // Top border
+        mvaddch(box_start_y, box_start_x, ACS_ULCORNER);
+        for (int x = box_start_x + 1; x < box_start_x + box_width - 1; x++) {
+            mvaddch(box_start_y, x, ACS_HLINE);
+        }
+        mvaddch(box_start_y, box_start_x + box_width - 1, ACS_URCORNER);
+        
+        // Side borders
+        for (int y = box_start_y + 1; y < box_start_y + box_height - 1; y++) {
+            mvaddch(y, box_start_x, ACS_VLINE);
+            mvaddch(y, box_start_x + box_width - 1, ACS_VLINE);
+        }
+        
+        // Bottom border
+        mvaddch(box_start_y + box_height - 1, box_start_x, ACS_LLCORNER);
+        for (int x = box_start_x + 1; x < box_start_x + box_width - 1; x++) {
+            mvaddch(box_start_y + box_height - 1, x, ACS_HLINE);
+        }
+        mvaddch(box_start_y + box_height - 1, box_start_x + box_width - 1, ACS_LRCORNER);
+        
+        // Title and warning message
+        std::string title = "DELETE ALL SAVED PLAYERS";
+        mvprintw(box_start_y + 2, box_start_x + (box_width - title.length()) / 2, "%s", title.c_str());
+        
+        // Draw separator line
+        for (int x = box_start_x + 2; x < box_start_x + box_width - 2; x++) {
+            mvaddch(box_start_y + 3, x, ACS_HLINE);
+        }
+        
+        std::string warning = "This will delete ALL saved player data!";
+        mvprintw(box_start_y + 5, box_start_x + (box_width - warning.length()) / 2, "%s", warning.c_str());
+        
+        std::string warning2 = "This action cannot be undone.";
+        mvprintw(box_start_y + 6, box_start_x + (box_width - warning2.length()) / 2, "%s", warning2.c_str());
+        
+        // Options
+        int center_x = box_start_x + box_width / 2;
+        std::string yesOption = "YES - DELETE ALL";
+        std::string noOption = "NO - CANCEL";
+        
+        if (choice == 0) {
+            std::string fullOption = "[" + yesOption + "]";
+            int option_x = center_x - fullOption.length() / 2;
+            mvprintw(box_start_y + 8, option_x, "%s", fullOption.c_str());
+        } else {
+            int option_x = center_x - yesOption.length() / 2;
+            mvprintw(box_start_y + 8, option_x, "%s", yesOption.c_str());
+        }
+        
+        if (choice == 1) {
+            std::string fullOption = "[" + noOption + "]";
+            int option_x = center_x - fullOption.length() / 2;
+            mvprintw(box_start_y + 9, option_x, "%s", fullOption.c_str());
+        } else {
+            int option_x = center_x - noOption.length() / 2;
+            mvprintw(box_start_y + 9, option_x, "%s", noOption.c_str());
+        }
+        
+        refresh();
+        
+        ch = getch();
+        if ((ch == KEY_UP || ch == 'w' || ch == 'W') && choice > 0) {
+            choice--;
+        } else if ((ch == KEY_DOWN || ch == 's' || ch == 'S') && choice < 1) {
+            choice++;
+        } else if (ch == 10 || ch == 13) { // Enter
+            return choice == 0; // Return true if YES was selected
+        } else if (ch == 'q' || ch == 'Q') {
+            return false; // Cancel
         }
     }
+}
+
+void deleteAllSavedPlayers() {
+    // More robust deletion - remove the entire saves directory and recreate it
+    system("rm -rf saves");
+    system("mkdir -p saves");
     
-    if (newAchievement) {
-        saveAchievements();
+    // Also clear current player data since it may no longer exist
+    if (currentPlayerData != nullptr) {
+        delete currentPlayerData;
+        currentPlayerData = nullptr;
     }
+    currentPlayerName = "";
+    
+    // Show confirmation message
+    int max_x, max_y;
+    getmaxyx(stdscr, max_y, max_x);
+    clear();
+    
+    std::string message = "All saved player data has been deleted!";
+    std::string instruction = "Press any key to continue...";
+    
+    mvprintw(max_y / 2, (max_x - message.length()) / 2, "%s", message.c_str());
+    mvprintw(max_y / 2 + 2, (max_x - instruction.length()) / 2, "%s", instruction.c_str());
+    
+    refresh();
+    getch();
 }
 
 // Function to get player name (with selection option)
@@ -941,6 +1362,13 @@ std::string getPlayerName(const std::vector<PlayerScore>& leaderboard) {
     } else if (selectedName == "") {
         // User chose "Enter new name"
         return getNewPlayerName();
+    } else if (selectedName == "DELETE_ALL") {
+        // User chose to delete all saved players
+        if (confirmDeleteAllPlayers()) {
+            deleteAllSavedPlayers();
+        }
+        // After deletion (or cancellation), show the menu again
+        return getPlayerName(leaderboard);
     } else {
         // User selected an existing name
         return selectedName;
@@ -1177,7 +1605,7 @@ int showLeaderboard(std::vector<PlayerScore>& leaderboard) {
             // If not confirmed, continue the loop to show leaderboard again
         } else if (ch == 'n' || ch == 'N') {
             return 2; // Change name requested
-        } else if (ch == 'w' || ch == 'W') {
+        } else if (ch == 'W') {  // Only capital W for worm closet
             return 3; // Worm closet requested
         } else {
             return 0; // No changes made
@@ -1389,8 +1817,18 @@ void drawBouncyWorm(int y, int start_x, int width, double position, int frame) {
     // Determine worm color based on equipped variant
     int worm_color = 0;  // Default white
     if (has_colors()) {
-        if (equippedWormColor == "pink") {
-            worm_color = COLOR_PAIR(4);  // Pink color pair
+        if (currentPlayerData != nullptr) {
+            if (currentPlayerData->equippedWormColor == "yellow") {
+                worm_color = COLOR_PAIR(9);  // Golden/yellow worm
+            } else if (currentPlayerData->equippedWormColor == "magenta") {
+                worm_color = COLOR_PAIR(8);  // Magenta worm
+            } else if (currentPlayerData->equippedWormColor == "blue") {
+                worm_color = COLOR_PAIR(7);  // Blue worm
+            } else if (currentPlayerData->equippedWormColor == "pink") {
+                worm_color = COLOR_PAIR(4);  // Pink worm
+            } else {
+                worm_color = COLOR_PAIR(5);  // Default orange-red worm
+            }
         } else {
             worm_color = COLOR_PAIR(5);  // Default orange-red worm
         }
@@ -1429,6 +1867,10 @@ void drawBouncyWorm(int y, int start_x, int width, double position, int frame) {
 
 // Cleanup function
 void cleanup() {
+    if (currentPlayerData != nullptr) {
+        delete currentPlayerData;
+        currentPlayerData = nullptr;
+    }
     endwin();
 }
 
@@ -1481,6 +1923,9 @@ int main(int argc, char* argv[]) {
             
             init_color(14, 800, 0, 800);     // Purple (RGB: 204, 0, 204)
             init_pair(8, 14, -1);  // Pair 8: purple worm
+            
+            init_color(15, 1000, 843, 0);    // Golden yellow (RGB: 255, 215, 0)
+            init_pair(9, 15, -1);  // Pair 9: golden/yellow worm
         } else {
             // Fallback to closest standard color (yellow)
             init_pair(1, COLOR_BLUE, -1);   // Pair 1: correct chars (yellow fallback) with transparent background
@@ -1489,18 +1934,17 @@ int main(int argc, char* argv[]) {
             init_pair(6, COLOR_GREEN, -1);    // Pair 6: green worm fallback
             init_pair(7, COLOR_BLUE, -1);     // Pair 7: blue worm fallback
             init_pair(8, COLOR_MAGENTA, -1);  // Pair 8: purple worm fallback
+            init_pair(9, COLOR_YELLOW, -1);   // Pair 9: golden/yellow worm fallback
         }
         
-        init_pair(2, COLOR_RED, -1);     // Pair 2: wrong chars (red) with transparent background
-        init_pair(3, COLOR_MAGENTA, -1);   // Pair 3: untyped chars (white) with transparent background
+        init_pair(2, COLOR_MAGENTA, -1);     // Pair 2: wrong chars (red) with transparent background
+        init_pair(3, COLOR_RED, -1);   // Pair 3: untyped chars (white) with transparent background
     }
     
     // Load leaderboard
     std::vector<PlayerScore> leaderboard = loadLeaderboard();
     
-    // Initialize and load achievements
-    initializeAchievements();
-    loadAchievements();
+    // Player-specific achievement system now handles initialization
     
     // Show animated intro
     showAnimatedIntro();
@@ -1523,6 +1967,9 @@ int main(int argc, char* argv[]) {
             return 0;
         }
     }
+    
+    // Set up current player data
+    setCurrentPlayer(playerName);
     
     // Main game loop
     while (true) {
@@ -1791,6 +2238,7 @@ int main(int argc, char* argv[]) {
                     }
                     if (newPlayerName != "CANCEL") {
                         playerName = newPlayerName; // Update player name
+                        setCurrentPlayer(playerName); // Update player data
                     }
                 }
             } else if (leaderboardResult == 3) {
@@ -2041,6 +2489,7 @@ int main(int argc, char* argv[]) {
                 }
                 if (newPlayerName != "CANCEL") {
                     playerName = newPlayerName; // Update player name
+                    setCurrentPlayer(playerName); // Update player data
                 }
             } else if (leaderboardResult == 3) {
                 // Worm closet requested
