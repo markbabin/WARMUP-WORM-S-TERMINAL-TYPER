@@ -8,6 +8,14 @@
 #include <iomanip>     // For formatting
 #include <unistd.h>    // For usleep() delay function
 #include <signal.h>    // For signal handling
+#include <cctype>      // For toupper()
+
+// Utility function to convert string to uppercase
+std::string toUpperCase(const std::string& str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(), ::toupper);
+    return result;
+}
 
 // Forward declarations
 void drawBouncyWorm(int y, int start_x, int width, double position, int frame);
@@ -178,7 +186,7 @@ std::string showNameSelectionMenu(const std::vector<std::string>& names) {
         int center_x = box_start_x + box_width / 2;
         
         for (size_t i = 0; i < names.size() && i < 6; i++) {  // Show max 6 names to fit in box
-            std::string displayName = names[i];
+            std::string displayName = toUpperCase(names[i]);
             if (displayName.length() > 32) {
                 displayName = displayName.substr(0, 29) + "...";
             }
@@ -209,7 +217,7 @@ std::string showNameSelectionMenu(const std::vector<std::string>& names) {
         refresh();
         
         // Instructions at bottom of terminal (outside box)
-        std::string instructions = "WASD/Arrows + Enter | ESC: Back";
+        std::string instructions = "WASD/Arrows + Enter | Q: Back";
         mvprintw(max_y - 2, (max_x - instructions.length()) / 2, "%s", instructions.c_str());
         
         // Add program-wide worm closet instruction
@@ -229,7 +237,7 @@ std::string showNameSelectionMenu(const std::vector<std::string>& names) {
             } else if (choice == (int)names.size()) {
                 return "";  // Signal to enter new name
             }
-        } else if (ch == 27) { // ESC - go back to main menu
+        } else if (ch == 'q' || ch == 'Q') { // Q - go back to main menu
             return "CANCEL";
         }
     }
@@ -304,13 +312,13 @@ std::string getNewPlayerName() {
         refresh();
         
         // Instructions at bottom of terminal (outside box)
-        std::string instructions = name.empty() ? "Type your name..." : "Enter: Confirm | ESC: Back";
+        std::string instructions = name.empty() ? "Type your name..." : "Enter: Confirm | Q: Back";
         mvprintw(max_y - 1, (max_x - instructions.length()) / 2, "%s", instructions.c_str());
         
         ch = getch();
         if ((ch == 10 || ch == 13) && !name.empty()) { // Enter key and name not empty
             break;
-        } else if (ch == 27) { // ESC - go back
+        } else if (ch == 'q' || ch == 'Q') { // Q - go back
             return "CANCEL";
         } else if (ch == KEY_BACKSPACE || ch == 127 || ch == 8) {
             if (!name.empty()) {
@@ -321,7 +329,7 @@ std::string getNewPlayerName() {
         }
     }
     
-    return name;
+    return toUpperCase(name);
 }
 
 // Function to get custom word count from user input
@@ -393,7 +401,7 @@ int getCustomWordCount() {
         refresh();
         
         // Instructions at bottom of terminal (outside box)
-        std::string instructions = input.empty() ? "Enter number of words (1-1000)..." : "Enter: Confirm | ESC: Back";
+        std::string instructions = input.empty() ? "Enter number of words (1-1000)..." : "Enter: Confirm | Q: Back";
         mvprintw(max_y - 1, (max_x - instructions.length()) / 2, "%s", instructions.c_str());
         
         ch = getch();
@@ -409,7 +417,7 @@ int getCustomWordCount() {
             } catch (const std::exception&) {
                 input = ""; // Clear invalid input
             }
-        } else if (ch == 27) { // ESC - go back
+        } else if (ch == 'q' || ch == 'Q') { // Q - go back
             curs_set(0); // Hide cursor
             return -1;
         } else if (ch == KEY_BACKSPACE || ch == 127 || ch == 8) {
@@ -497,7 +505,7 @@ int showWordCountMenu() {
         refresh();
         
         // Instructions at bottom of terminal (outside box)
-        std::string instructions = "WASD/Arrows + Enter | ESC: Back";
+        std::string instructions = "WASD/Arrows + Enter | Q: Back";
         mvprintw(max_y - 1, (max_x - instructions.length()) / 2, "%s", instructions.c_str());
         
         ch = getch();
@@ -518,7 +526,7 @@ int showWordCountMenu() {
                 }
                 // If customWords == 0, stay in menu
             }
-        } else if (ch == 27) { // ESC - go back to main menu
+        } else if (ch == 'q' || ch == 'Q') { // Q - go back to main menu
             return -1;
         }
     }
@@ -595,8 +603,12 @@ void showTextOptionsMenu(bool& includePunctuation, bool& includeNumbers) {
         refresh();
         
         // Instructions at bottom of terminal (outside box)
-        std::string instructions = "WASD/Arrows: Navigate | Space: Toggle | Enter: Continue | ESC: Back";
-        mvprintw(max_y - 1, (max_x - instructions.length()) / 2, "%s", instructions.c_str());
+        std::string instructions = "WASD/Arrows: Navigate | Space: Toggle | Enter: Continue | Q: Back";
+        mvprintw(max_y - 2, (max_x - instructions.length()) / 2, "%s", instructions.c_str());
+        
+        // Add worm closet instruction
+        std::string wormInstruction = "Press W for Worm Closet";
+        mvprintw(max_y - 1, (max_x - wormInstruction.length()) / 2, "%s", wormInstruction.c_str());
         
         ch = getch();
         if ((ch == KEY_UP || ch == 'w' || ch == 'W') && choice > 0) {
@@ -611,7 +623,7 @@ void showTextOptionsMenu(bool& includePunctuation, bool& includeNumbers) {
             }
         } else if (ch == 10 || ch == 13) { // Enter
             break;
-        } else if (ch == 27) { // ESC - use defaults (no punctuation, no numbers)
+        } else if (ch == 'q' || ch == 'Q') { // Q - use defaults (no punctuation, no numbers)
             includePunctuation = false;
             includeNumbers = false;
             break;
@@ -792,7 +804,7 @@ bool showWormCloset() {
         refresh();
         
         // Instructions at bottom of terminal
-        std::string instructions = "WASD/Arrows: Navigate | Enter: Equip | ESC: Back";
+        std::string instructions = "WASD/Arrows: Navigate | Enter: Equip | Q: Back";
         mvprintw(max_y - 1, (max_x - instructions.length()) / 2, "%s", instructions.c_str());
         
         // Use timeout for smooth animation
@@ -828,7 +840,7 @@ bool showWormCloset() {
                 saveAchievements();
             }
             // Other slots don't have worms yet
-        } else if (ch == 27) { // ESC
+        } else if (ch == 'q' || ch == 'Q') { // Q
             return false;
         }
     }
@@ -952,7 +964,7 @@ std::vector<PlayerScore> loadLeaderboard() {
             size_t pos7 = line.find('|', pos6 + 1);
             
             if (pos1 != std::string::npos && pos2 != std::string::npos && pos3 != std::string::npos) {
-                std::string name = line.substr(0, pos1);
+                std::string name = toUpperCase(line.substr(0, pos1));
                 double wpm = std::stod(line.substr(pos1 + 1, pos2 - pos1 - 1));
                 double accuracy = std::stod(line.substr(pos2 + 1, pos3 - pos2 - 1));
                 
@@ -1081,7 +1093,7 @@ int showLeaderboard(std::vector<PlayerScore>& leaderboard) {
             mvprintw(5, compact_start_x, "- ----------- ----  ----  ----  -----  ----");
             
             for (size_t i = 0; i < leaderboard.size() && i < 10; i++) {
-                std::string nameDisplay = leaderboard[i].name;
+                std::string nameDisplay = toUpperCase(leaderboard[i].name);
                 if (nameDisplay.length() > 11) {
                     nameDisplay = nameDisplay.substr(0, 8) + "...";
                 }
@@ -1092,7 +1104,7 @@ int showLeaderboard(std::vector<PlayerScore>& leaderboard) {
                 if (leaderboard[i].hasNumbers) mode += "N";
                 if (mode.empty()) mode = "-";
                 
-                mvprintw(6 + i, compact_start_x, "%-1zu %-11s %4.0f  %3.0f%%  %3.0fs  %3dw   %-2s", 
+                mvprintw(6 + i, compact_start_x, "%2zu %-11s %4.0f  %3.0f%%  %3.0fs  %3dw   %-2s", 
                          i + 1, nameDisplay.c_str(), leaderboard[i].wpm, 
                          leaderboard[i].accuracy, leaderboard[i].time, leaderboard[i].wordCount, mode.c_str());
             }
@@ -1103,7 +1115,7 @@ int showLeaderboard(std::vector<PlayerScore>& leaderboard) {
             mvprintw(5, start_x, "----  --------------  -----  --------  ----   -----  ----  ----------------");
             
             for (size_t i = 0; i < leaderboard.size() && i < 10; i++) {
-                std::string nameDisplay = leaderboard[i].name;
+                std::string nameDisplay = toUpperCase(leaderboard[i].name);
                 if (nameDisplay.length() > 14) {
                     nameDisplay = nameDisplay.substr(0, 11) + "...";
                 }
@@ -1114,7 +1126,7 @@ int showLeaderboard(std::vector<PlayerScore>& leaderboard) {
                 if (leaderboard[i].hasNumbers) mode += "N";
                 if (mode.empty()) mode = "-";
                 
-                mvprintw(6 + i, start_x, "%-4zu  %-14s  %5.1f  %7.1f%%  %4.0fs  %3dw   %-4s  %s", 
+                mvprintw(6 + i, start_x, "%4zu  %-14s  %5.1f  %7.1f%%  %4.0fs  %3dw   %-4s  %s", 
                          i + 1, nameDisplay.c_str(), leaderboard[i].wpm, 
                          leaderboard[i].accuracy, leaderboard[i].time, leaderboard[i].wordCount, mode.c_str(), leaderboard[i].date.c_str());
             }
@@ -1130,10 +1142,14 @@ int showLeaderboard(std::vector<PlayerScore>& leaderboard) {
         std::string wormStr = "Press 'W' to open worm closet";
         std::string continueStr = "Press any other key to continue";
         
-        mvprintw(max_y - 7, (max_x - clearStr.length())/2, "%s", clearStr.c_str());
-        mvprintw(max_y - 6, (max_x - nameStr.length())/2, "%s", nameStr.c_str());
-        mvprintw(max_y - 5, (max_x - wormStr.length())/2, "%s", wormStr.c_str());
-        mvprintw(max_y - 4, (max_x - continueStr.length())/2, "%s", continueStr.c_str());
+        mvprintw(max_y - 8, (max_x - clearStr.length())/2, "%s", clearStr.c_str());
+        mvprintw(max_y - 7, (max_x - nameStr.length())/2, "%s", nameStr.c_str());
+        mvprintw(max_y - 6, (max_x - wormStr.length())/2, "%s", wormStr.c_str());
+        mvprintw(max_y - 5, (max_x - continueStr.length())/2, "%s", continueStr.c_str());
+        
+        // Add worm closet instruction
+        std::string wormInstruction = "Press W for Worm Closet";
+        mvprintw(max_y - 3, (max_x - wormInstruction.length()) / 2, "%s", wormInstruction.c_str());
         refresh();
         
         // Use timeout to allow animation to continue
@@ -1188,6 +1204,14 @@ void showAnimatedIntro() {
     
     clear();
     
+    // Show skip instruction
+    std::string skip_msg = "Press 's' to skip intro";
+    mvprintw(1, (max_x - skip_msg.length()) / 2, "%s", skip_msg.c_str());
+    refresh();
+    
+    // Set non-blocking input to check for skip key
+    nodelay(stdscr, TRUE);
+    
     // Worm animation variables
     double worm_position = 0.0;
     int worm_frame = 0;
@@ -1197,8 +1221,9 @@ void showAnimatedIntro() {
     
     // Display words one by one with animation and smooth worm movement
     int total_frames = 20;  // 20 frames for slower, smoother worm movement
+    bool skip_intro = false;
     
-    for (int frame = 0; frame < total_frames; frame++) {
+    for (int frame = 0; frame < total_frames && !skip_intro; frame++) {
         // Calculate smooth worm movement
         worm_position = (double)frame / (total_frames - 1);  // Move from 0.0 to 1.0
         
@@ -1209,6 +1234,9 @@ void showAnimatedIntro() {
         
         // Clear and redraw everything for each frame
         clear();
+        
+        // Redraw skip instruction
+        mvprintw(1, (max_x - skip_msg.length()) / 2, "%s", skip_msg.c_str());
         
         // Draw words up to current progress
         int temp_x = title_start_x;
@@ -1236,9 +1264,20 @@ void showAnimatedIntro() {
         move(title_y, cursor_x);
         
         refresh();
+        
+        // Check for skip key press
+        int ch = getch();
+        if (ch == 's' || ch == 'S') {
+            skip_intro = true;
+            break;
+        }
+        
         usleep(150000);  // 150ms delay between frames (total: 3 seconds for 20 frames)
         worm_frame++;  // Advance worm animation frame by frame
     }
+    
+    // Restore blocking input
+    nodelay(stdscr, FALSE);
     
     // Clear the screen and redraw only the title without the worm
     clear();
@@ -1261,18 +1300,27 @@ void showAnimatedIntro() {
     curs_set(0);
     refresh();
     
-    // Hold the complete title for a moment
-    usleep(500000);  // 500ms final pause (reduced since we're adding more animation)
+    // Hold the complete title for a moment (skip if intro was skipped)
+    if (!skip_intro) {
+        usleep(500000);  // 500ms final pause (reduced since we're adding more animation)
+    }
     
-    // Show animated prompt to continue - letter by letter
+    // Show prompt to continue (animate if not skipped)
     std::string prompt = "Press any key to continue...";
     int prompt_y = title_y + 3;
     int prompt_start_x = (max_x - prompt.length()) / 2;
     
-    for (size_t i = 0; i < prompt.length(); i++) {
-        mvaddch(prompt_y, prompt_start_x + i, prompt[i]);
+    if (skip_intro) {
+        // Show prompt immediately if intro was skipped
+        mvprintw(prompt_y, prompt_start_x, "%s", prompt.c_str());
         refresh();
-        usleep(50000);  // 50ms delay between letters (fast typing effect)
+    } else {
+        // Animate prompt letter by letter
+        for (size_t i = 0; i < prompt.length(); i++) {
+            mvaddch(prompt_y, prompt_start_x + i, prompt[i]);
+            refresh();
+            usleep(50000);  // 50ms delay between letters (fast typing effect)
+        }
     }
     
     // Wait for any key press
@@ -1554,28 +1602,49 @@ int main(int argc, char* argv[]) {
     
     srand(time(nullptr));          // Seed random number generator with current time
     
-    // Create combined word pool based on selected options
-    std::vector<std::string> combinedWords = words;  // Start with base words
-    
-    if (includePunctuation) {
-        // Add punctuation words to the pool
-        for (size_t i = 0; i < punctuationWords.size(); i++) {
-            combinedWords.push_back(punctuationWords[i]);
-        }
-    }
-    
-    if (includeNumbers) {
-        // Add number words to the pool
-        for (size_t i = 0; i < numberWords.size(); i++) {
-            combinedWords.push_back(numberWords[i]);
-        }
-    }
-    
-    // Generate target text using selected word count and combined word pool
+    // Generate target text based on selected options
     std::string target = "";       // Text user needs to type
-    for (int i = 0; i < wordCount; i++) {
-        if (i > 0) target += " ";  // Add space between words
-        target += combinedWords[rand() % combinedWords.size()];  // Pick random word from combined pool
+    
+    if (includeNumbers && !includePunctuation) {
+        // Numbers only mode: only pure numbers and spaces
+        std::vector<std::string> pureNumbers;
+        pureNumbers.push_back("0"); pureNumbers.push_back("1"); pureNumbers.push_back("2"); pureNumbers.push_back("3");
+        pureNumbers.push_back("4"); pureNumbers.push_back("5"); pureNumbers.push_back("6"); pureNumbers.push_back("7");
+        pureNumbers.push_back("8"); pureNumbers.push_back("9"); pureNumbers.push_back("10"); pureNumbers.push_back("11");
+        pureNumbers.push_back("12"); pureNumbers.push_back("13"); pureNumbers.push_back("14"); pureNumbers.push_back("15");
+        pureNumbers.push_back("16"); pureNumbers.push_back("17"); pureNumbers.push_back("18"); pureNumbers.push_back("19");
+        pureNumbers.push_back("20"); pureNumbers.push_back("25"); pureNumbers.push_back("30"); pureNumbers.push_back("42");
+        pureNumbers.push_back("50"); pureNumbers.push_back("75"); pureNumbers.push_back("99"); pureNumbers.push_back("100");
+        pureNumbers.push_back("123"); pureNumbers.push_back("456"); pureNumbers.push_back("789"); pureNumbers.push_back("1000");
+        pureNumbers.push_back("2024"); pureNumbers.push_back("2025"); pureNumbers.push_back("3000"); pureNumbers.push_back("5000");
+        
+        for (int i = 0; i < wordCount; i++) {
+            if (i > 0) target += " ";  // Add space between numbers
+            target += pureNumbers[rand() % pureNumbers.size()];
+        }
+    } else {
+        // Create combined word pool based on selected options
+        std::vector<std::string> combinedWords = words;  // Start with base words
+        
+        if (includePunctuation) {
+            // Add punctuation words to the pool
+            for (size_t i = 0; i < punctuationWords.size(); i++) {
+                combinedWords.push_back(punctuationWords[i]);
+            }
+        }
+        
+        if (includeNumbers) {
+            // Add number words to the pool (mixed with words)
+            for (size_t i = 0; i < numberWords.size(); i++) {
+                combinedWords.push_back(numberWords[i]);
+            }
+        }
+        
+        // Generate target text using selected word count and combined word pool
+        for (int i = 0; i < wordCount; i++) {
+            if (i > 0) target += " ";  // Add space between words
+            target += combinedWords[rand() % combinedWords.size()];  // Pick random word from combined pool
+        }
     }
     
     std::string typed = "";        // What user has typed so far
@@ -1631,9 +1700,13 @@ int main(int argc, char* argv[]) {
                         next_word_pos = space_pos;
                     }
                     
-                    // Fill with spaces and partial word to reach next word
+                    // Fill with incorrect markers for skipped letters
                     while (typed.length() < next_word_pos && typed.length() < target.length()) {
-                        typed += target[typed.length()];
+                        if (target[typed.length()] == ' ') {
+                            typed += ' ';  // Keep spaces as spaces
+                        } else {
+                            typed += '_';  // Mark skipped letters as incorrect
+                        }
                     }
                     has_jumped = true;
                 } else {
@@ -1662,9 +1735,46 @@ int main(int argc, char* argv[]) {
             ball_frame = 0;       // Reset ball animation
             has_jumped = false;   // Reset jump state
             jumped_from_pos = std::string::npos;
-            for (int i = 0; i < wordCount; i++) {          // Generate new text with selected word count
-                if (i > 0) target += " ";           // Space between words
-                target += combinedWords[rand() % combinedWords.size()];  // Random word from combined pool
+            // Generate new text with selected word count using same logic as initial generation
+            if (includeNumbers && !includePunctuation) {
+                // Numbers only mode: only pure numbers and spaces
+                std::vector<std::string> pureNumbers;
+                pureNumbers.push_back("0"); pureNumbers.push_back("1"); pureNumbers.push_back("2"); pureNumbers.push_back("3");
+                pureNumbers.push_back("4"); pureNumbers.push_back("5"); pureNumbers.push_back("6"); pureNumbers.push_back("7");
+                pureNumbers.push_back("8"); pureNumbers.push_back("9"); pureNumbers.push_back("10"); pureNumbers.push_back("11");
+                pureNumbers.push_back("12"); pureNumbers.push_back("13"); pureNumbers.push_back("14"); pureNumbers.push_back("15");
+                pureNumbers.push_back("16"); pureNumbers.push_back("17"); pureNumbers.push_back("18"); pureNumbers.push_back("19");
+                pureNumbers.push_back("20"); pureNumbers.push_back("25"); pureNumbers.push_back("30"); pureNumbers.push_back("42");
+                pureNumbers.push_back("50"); pureNumbers.push_back("75"); pureNumbers.push_back("99"); pureNumbers.push_back("100");
+                pureNumbers.push_back("123"); pureNumbers.push_back("456"); pureNumbers.push_back("789"); pureNumbers.push_back("1000");
+                pureNumbers.push_back("2024"); pureNumbers.push_back("2025"); pureNumbers.push_back("3000"); pureNumbers.push_back("5000");
+                
+                for (int i = 0; i < wordCount; i++) {
+                    if (i > 0) target += " ";
+                    target += pureNumbers[rand() % pureNumbers.size()];
+                }
+            } else {
+                // Create combined word pool based on selected options
+                std::vector<std::string> combinedWords = words;  // Start with base words
+                
+                if (includePunctuation) {
+                    // Add punctuation words to the pool
+                    for (size_t i = 0; i < punctuationWords.size(); i++) {
+                        combinedWords.push_back(punctuationWords[i]);
+                    }
+                }
+                
+                if (includeNumbers) {
+                    // Add number words to the pool (mixed with words)
+                    for (size_t i = 0; i < numberWords.size(); i++) {
+                        combinedWords.push_back(numberWords[i]);
+                    }
+                }
+                
+                for (int i = 0; i < wordCount; i++) {
+                    if (i > 0) target += " ";
+                    target += combinedWords[rand() % combinedWords.size()];
+                }
             }
         } else if (ch == 'l' || ch == 'L') { // Show leaderboard
             int leaderboardResult = showLeaderboard(leaderboard);
@@ -1847,9 +1957,16 @@ int main(int argc, char* argv[]) {
                 }
                 
                 // WPM = (correct chars / 5) / (time in minutes)
-                double wpm = (correct / 5.0) / (elapsed / 60.0);
+                double raw_wpm = (correct / 5.0) / (elapsed / 60.0);
                 // Accuracy = (correct chars / total typed) * 100
                 double accuracy = (correct * 100.0) / typed.length();
+                // Apply accuracy penalty to prevent space-mashing exploit
+                // Below 50% accuracy, severely penalize WPM
+                double accuracy_multiplier = 1.0;
+                if (accuracy < 50.0) {
+                    accuracy_multiplier = accuracy / 50.0;  // Linear penalty below 50%
+                }
+                double wpm = raw_wpm * accuracy_multiplier;
                 
                 // Center the WPM stats line
                 char statsBuffer[100];
@@ -1869,8 +1986,14 @@ int main(int argc, char* argv[]) {
             for (size_t i = 0; i < typed.length() && i < target.length(); i++) {
                 if (typed[i] == target[i]) correct++;
             }
-            double final_wpm = (correct / 5.0) / (elapsed / 60.0);
+            double raw_final_wpm = (correct / 5.0) / (elapsed / 60.0);
             double final_accuracy = (correct * 100.0) / typed.length();
+            // Apply same accuracy penalty to final WPM calculation
+            double final_accuracy_multiplier = 1.0;
+            if (final_accuracy < 50.0) {
+                final_accuracy_multiplier = final_accuracy / 50.0;  // Linear penalty below 50%
+            }
+            double final_wpm = raw_final_wpm * final_accuracy_multiplier;
             
             // Add to leaderboard and save
             PlayerScore newScore(playerName, final_wpm, final_accuracy, elapsed, wordCount, includePunctuation, includeNumbers);
@@ -1882,18 +2005,22 @@ int main(int argc, char* argv[]) {
             
             // Center the completion messages
             std::string completeMsg = "COMPLETE! leaderboard!";
-            std::string continueMsg = "Press Enter to view leaderboard";
+            std::string continueMsg = "Press Enter to view leaderboard | Q to quit";
             int complete_x = win_start_x + (window_width - completeMsg.length()) / 2;
             int continue_x = win_start_x + (window_width - continueMsg.length()) / 2;
             mvprintw(win_start_y + 32, complete_x, "%s", completeMsg.c_str());
             mvprintw(win_start_y + 13, continue_x, "%s", continueMsg.c_str());
             refresh();
             
-            // Wait for Enter to continue
+            // Wait for Enter to continue or Q to quit
             while (true) {
                 int complete_ch = getch();
                 if (complete_ch == 10 || complete_ch == 13) {
                     break;
+                } else if (complete_ch == 'q' || complete_ch == 'Q') {
+                    // Quit the entire application
+                    cleanup();
+                    return 0;
                 }
             }
             
