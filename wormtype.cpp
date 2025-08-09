@@ -24,6 +24,9 @@ void initializeAchievements();
 void saveAchievements();
 void loadAchievements();
 void checkAchievements(double wpm, double accuracy, double time);
+bool showWormCloset();
+std::string getNewPlayerName();
+int getCustomWordCount();
 
 
 // Achievement system
@@ -493,6 +496,17 @@ int getCustomWordCount() {
         }
     }
 }
+
+// Unified menu system with all options in one view
+struct GameSettings {
+    std::string playerName;
+    int wordCount;
+    bool includePunctuation;
+    bool includeNumbers;
+    bool isCustomWordCount;
+    int customWords;
+};
+
 
 // Function to show word count selection menu
 int showWordCountMenu() {
@@ -1613,6 +1627,278 @@ int showLeaderboard(std::vector<PlayerScore>& leaderboard) {
     }
 }
 
+// Unified menu system with all options in one view
+bool showUnifiedMenu(GameSettings& settings, const std::vector<PlayerScore>& leaderboard) {
+    int max_x, max_y;
+    int currentSection = 0;  // 0=Player, 1=Words, 2=Options, 3=Start
+    int sectionChoice[] = {0, 0, 0, 0};  // Choice within each section
+    int ch;
+    
+    // Available word counts
+    std::vector<int> wordCounts = {5, 10, 25, 50};
+    std::vector<std::string> wordOptions = {"5", "10", "25", "50", "Custom"};
+    
+    // Initialize settings if needed
+    if (settings.wordCount == 0) {
+        settings.wordCount = 25;  // Default
+        settings.includePunctuation = false;
+        settings.includeNumbers = false;
+        settings.isCustomWordCount = false;
+        settings.customWords = 0;
+    }
+    
+    while (true) {
+        getmaxyx(stdscr, max_y, max_x);
+        clear();
+        
+        // Calculate layout for 4 boxes side by side
+        int total_width = max_x - 4;  // Leave some margin
+        int box_width = total_width / 4;
+        int box_height = 12;
+        int start_y = (max_y - box_height) / 2;
+        int start_x = 2;
+        
+        // Ensure minimum box width
+        if (box_width < 20) {
+            box_width = 20;
+            start_x = (max_x - (box_width * 4)) / 2;
+        }
+        
+        // Draw boxes for each section
+        for (int section = 0; section < 4; section++) {
+            int box_x = start_x + (section * box_width);
+            bool isActive = (currentSection == section);
+            
+            // Draw box border (highlight active section)
+            if (isActive) {
+                attron(COLOR_PAIR(1));  // Yellow highlight for active section
+            }
+            
+            // Top border
+            mvaddch(start_y, box_x, ACS_ULCORNER);
+            for (int x = 1; x < box_width - 1; x++) {
+                mvaddch(start_y, box_x + x, ACS_HLINE);
+            }
+            mvaddch(start_y, box_x + box_width - 1, ACS_URCORNER);
+            
+            // Side borders
+            for (int y = 1; y < box_height - 1; y++) {
+                mvaddch(start_y + y, box_x, ACS_VLINE);
+                mvaddch(start_y + y, box_x + box_width - 1, ACS_VLINE);
+            }
+            
+            // Bottom border
+            mvaddch(start_y + box_height - 1, box_x, ACS_LLCORNER);
+            for (int x = 1; x < box_width - 1; x++) {
+                mvaddch(start_y + box_height - 1, box_x + x, ACS_HLINE);
+            }
+            mvaddch(start_y + box_height - 1, box_x + box_width - 1, ACS_LRCORNER);
+            
+            if (isActive) {
+                attroff(COLOR_PAIR(1));
+            }
+            
+            // Draw section content
+            switch (section) {
+                case 0: {  // Player section
+                    std::string title = "PLAYER";
+                    mvprintw(start_y + 2, box_x + (box_width - title.length()) / 2, "%s", title.c_str());
+                    
+                    // Draw separator
+                    for (int x = 2; x < box_width - 2; x++) {
+                        mvaddch(start_y + 3, box_x + x, ACS_HLINE);
+                    }
+                    
+                    // Show current player name (truncated if too long)
+                    std::string displayName = settings.playerName;
+                    if (displayName.length() > box_width - 6) {
+                        displayName = displayName.substr(0, box_width - 9) + "...";
+                    }
+                    mvprintw(start_y + 5, box_x + 2, "Current: %s", displayName.c_str());
+                    
+                    if (isActive && sectionChoice[0] == 0) {
+                        mvprintw(start_y + 5, box_x + 1, ">");
+                    }
+                    
+                    mvprintw(start_y + 7, box_x + 2, "New Name");
+                    if (isActive && sectionChoice[0] == 1) {
+                        mvprintw(start_y + 7, box_x + 1, ">");
+                    }
+                    
+                    mvprintw(start_y + 8, box_x + 2, "Worm Closet");
+                    if (isActive && sectionChoice[0] == 2) {
+                        mvprintw(start_y + 8, box_x + 1, ">");
+                    }
+                    
+                    mvprintw(start_y + 9, box_x + 2, "Leaderboard");
+                    if (isActive && sectionChoice[0] == 3) {
+                        mvprintw(start_y + 9, box_x + 1, ">");
+                    }
+                    break;
+                }
+                
+                case 1: {  // Word Count section
+                    std::string title = "WORDS";
+                    mvprintw(start_y + 2, box_x + (box_width - title.length()) / 2, "%s", title.c_str());
+                    
+                    // Draw separator
+                    for (int x = 2; x < box_width - 2; x++) {
+                        mvaddch(start_y + 3, box_x + x, ACS_HLINE);
+                    }
+                    
+                    // Show word count options
+                    for (int i = 0; i < 5; i++) {  // 4 preset + custom
+                        bool isSelected = false;
+                        if (i < 4 && !settings.isCustomWordCount && settings.wordCount == wordCounts[i]) {
+                            isSelected = true;
+                        } else if (i == 4 && settings.isCustomWordCount) {
+                            isSelected = true;
+                        }
+                        
+                        std::string option;
+                        if (i < 4) {
+                            option = std::string(isSelected ? "[X]" : "[ ]") + " " + wordOptions[i];
+                        } else {
+                            if (settings.isCustomWordCount) {
+                                option = "[X] Custom (" + std::to_string(settings.customWords) + ")";
+                            } else {
+                                option = "[ ] Custom";
+                            }
+                        }
+                        
+                        if (option.length() > box_width - 4) {
+                            option = option.substr(0, box_width - 7) + "...";
+                        }
+                        
+                        mvprintw(start_y + 5 + i, box_x + 2, "%s", option.c_str());
+                        
+                        if (isActive && sectionChoice[1] == i) {
+                            mvprintw(start_y + 5 + i, box_x + 1, ">");
+                        }
+                    }
+                    break;
+                }
+                
+                case 2: {  // Text Options section
+                    std::string title = "OPTIONS";
+                    mvprintw(start_y + 2, box_x + (box_width - title.length()) / 2, "%s", title.c_str());
+                    
+                    // Draw separator
+                    for (int x = 2; x < box_width - 2; x++) {
+                        mvaddch(start_y + 3, box_x + x, ACS_HLINE);
+                    }
+                    
+                    // Show options with checkboxes
+                    std::string punctOption = std::string(settings.includePunctuation ? "[X]" : "[ ]") + " Punctuation";
+                    std::string numbersOption = std::string(settings.includeNumbers ? "[X]" : "[ ]") + " Numbers";
+                    
+                    mvprintw(start_y + 5, box_x + 2, "%s", punctOption.c_str());
+                    if (isActive && sectionChoice[2] == 0) {
+                        mvprintw(start_y + 5, box_x + 1, ">");
+                    }
+                    
+                    mvprintw(start_y + 6, box_x + 2, "%s", numbersOption.c_str());
+                    if (isActive && sectionChoice[2] == 1) {
+                        mvprintw(start_y + 6, box_x + 1, ">");
+                    }
+                    break;
+                }
+                
+                case 3: {  // Start section
+                    std::string title = "START";
+                    mvprintw(start_y + 2, box_x + (box_width - title.length()) / 2, "%s", title.c_str());
+                    
+                    // Draw separator
+                    for (int x = 2; x < box_width - 2; x++) {
+                        mvaddch(start_y + 3, box_x + x, ACS_HLINE);
+                    }
+                    
+                    if (isActive) {
+                        attron(COLOR_PAIR(1));  // Highlight start button
+                    }
+                    mvprintw(start_y + 6, box_x + 2, "START TEST");
+                    if (isActive) {
+                        attroff(COLOR_PAIR(1));
+                        mvprintw(start_y + 6, box_x + 1, ">");
+                    }
+                    break;
+                }
+            }
+        }
+        
+        refresh();
+        
+        // Instructions at bottom
+        mvprintw(max_y - 2, 2, "A/D or Left/Right: Navigate sections");
+        mvprintw(max_y - 1, 2, "W/S or Up/Down: Navigate within section | Space/Enter: Select/Toggle | Q: Quit");
+        
+        ch = getch();
+        
+        // Handle navigation between sections
+        if ((ch == KEY_LEFT || ch == 'a' || ch == 'A') && currentSection > 0) {
+            currentSection--;
+        } else if ((ch == KEY_RIGHT || ch == 'd' || ch == 'D') && currentSection < 3) {
+            currentSection++;
+        }
+        
+        // Handle navigation within sections
+        else if (ch == KEY_UP || ch == 'w' || ch == 'W') {
+            if (currentSection == 0 && sectionChoice[0] > 0) sectionChoice[0]--;
+            else if (currentSection == 1 && sectionChoice[1] > 0) sectionChoice[1]--;  
+            else if (currentSection == 2 && sectionChoice[2] > 0) sectionChoice[2]--;
+        } else if (ch == KEY_DOWN || ch == 's' || ch == 'S') {
+            if (currentSection == 0 && sectionChoice[0] < 3) sectionChoice[0]++;  // Now 4 options (0-3)
+            else if (currentSection == 1 && sectionChoice[1] < 4) sectionChoice[1]++;
+            else if (currentSection == 2 && sectionChoice[2] < 1) sectionChoice[2]++;
+        }
+        
+        // Handle selections/toggles
+        else if (ch == ' ' || ch == 10 || ch == 13) {  // Space or Enter
+            if (currentSection == 0) {  // Player section
+                if (sectionChoice[0] == 1) {  // New Name
+                    std::string newName = getNewPlayerName();
+                    if (newName != "CANCEL" && !newName.empty()) {
+                        settings.playerName = newName;
+                        // Update current player data
+                        setCurrentPlayer(newName);
+                    }
+                } else if (sectionChoice[0] == 2) {  // Worm Closet
+                    showWormCloset();
+                } else if (sectionChoice[0] == 3) {  // Leaderboard
+                    // Reload leaderboard from file to get latest scores
+                    std::vector<PlayerScore> currentLeaderboard = loadLeaderboard();
+                    showLeaderboard(currentLeaderboard);
+                }
+            } else if (currentSection == 1) {  // Word Count section
+                if (sectionChoice[1] < 4) {
+                    settings.wordCount = wordCounts[sectionChoice[1]];
+                    settings.isCustomWordCount = false;
+                } else {  // Custom option
+                    int customWords = getCustomWordCount();
+                    if (customWords > 0) {
+                        settings.isCustomWordCount = true;
+                        settings.customWords = customWords;
+                        settings.wordCount = customWords;
+                    }
+                }
+            } else if (currentSection == 2) {  // Options section
+                if (sectionChoice[2] == 0) {
+                    settings.includePunctuation = !settings.includePunctuation;
+                } else if (sectionChoice[2] == 1) {
+                    settings.includeNumbers = !settings.includeNumbers;
+                }
+            } else if (currentSection == 3) {  // Start section
+                return true;  // Start the test
+            }
+        }
+        
+        // Handle quit
+        else if (ch == 'q' || ch == 'Q') {
+            return false;  // Exit program
+        }
+    }
+}
+
 // Function to show animated intro title
 void showAnimatedIntro() {
     int max_x, max_y;
@@ -1949,42 +2235,39 @@ int main(int argc, char* argv[]) {
     // Show animated intro
     showAnimatedIntro();
     
-    // Get player name once at startup
-    std::string playerName = getPlayerName(leaderboard);
-    
-    // If user cancelled name selection, exit program
-    if (playerName == "CANCEL") {
-        cleanup();
-        return 0;
-    }
-    
-    // If user selected worm closet first, show it then get name again
-    while (playerName == "WORM_CLOSET") {
-        showWormCloset();
-        playerName = getPlayerName(leaderboard);
-        if (playerName == "CANCEL") {
-            cleanup();
-            return 0;
-        }
-    }
-    
-    // Set up current player data
-    setCurrentPlayer(playerName);
+    // Start with a default player name - unified menu will handle player selection
+    std::string playerName = "PLAYER1";
+    setCurrentPlayer(playerName); // Initialize default player data
     
     // Main game loop
     while (true) {
         
-        // Get word count selection
-        int wordCount = showWordCountMenu();
+        // Set up game settings with current player name
+        GameSettings settings;
+        settings.playerName = playerName;
+        settings.wordCount = 25;  // Default values
+        settings.includePunctuation = false;
+        settings.includeNumbers = false;
+        settings.isCustomWordCount = false;
+        settings.customWords = 0;
         
-        // If user cancelled word count selection, exit program
-        if (wordCount == -1) {
+        // Show unified menu (pass leaderboard by reference so it can be updated)
+        bool startTest = showUnifiedMenu(settings, leaderboard);
+        
+        // If user cancelled, exit program
+        if (!startTest) {
             break;
         }
         
-        // Get text options selection
-        bool includePunctuation, includeNumbers;
-        showTextOptionsMenu(includePunctuation, includeNumbers);
+        // Extract settings from unified menu
+        int wordCount = settings.isCustomWordCount ? settings.customWords : settings.wordCount;
+        bool includePunctuation = settings.includePunctuation;
+        bool includeNumbers = settings.includeNumbers;
+        
+        // Update player name if it was changed in the menu
+        if (settings.playerName != playerName) {
+            playerName = settings.playerName;
+        }
         
         // Word list for random text generation
         std::vector<std::string> words;
